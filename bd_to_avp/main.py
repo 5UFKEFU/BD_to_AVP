@@ -16,6 +16,11 @@ from typing import Any, Generator
 
 import ffmpeg  # type: ignore
 
+parser = argparse.ArgumentParser(description='Process 3D MVC videos into separate H.265 encoded streams.')
+parser.add_argument('--use-hardware-encoding', action='store_true', help='Use hardware encoding for H.265')
+args = parser.parse_args()
+
+# 然后将 args.use_hardware_encoding 传递到相应的函数中
 
 @dataclass
 class DiscInfo:
@@ -421,6 +426,7 @@ def generate_ffmpeg_wrapper_command(
     disc_info: DiscInfo,
     bitrate: int,
     crop_params: str,
+    use_hardware_encoding: bool = True  # 新增参数用于控制是否使用硬件编码
 ) -> list[Any]:
     pix_fmt = "yuv420p10le" if disc_info.color_depth == 10 else "yuv420p"
     stream = ffmpeg.input(
@@ -432,10 +438,16 @@ def generate_ffmpeg_wrapper_command(
     )
     if crop_params:
         stream = ffmpeg.filter(stream, "crop", *crop_params.split(":"))
+    
+    if use_hardware_encoding:
+        vcodec = "hevc_videotoolbox"
+    else:
+        vcodec = "libx265"
+    
     stream = ffmpeg.output(
         stream,
         f"file:{output_path}",
-        vcodec="hevc_videotoolbox",
+        vcodec=vcodec,
         video_bitrate=f"{bitrate}M",
         bufsize=f"{bitrate * 2}M",
         tag="hvc1",
