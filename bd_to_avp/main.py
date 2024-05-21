@@ -16,11 +16,6 @@ from typing import Any, Generator
 
 import ffmpeg  # type: ignore
 
-parser = argparse.ArgumentParser(description='Process 3D MVC videos into separate H.265 encoded streams.')
-parser.add_argument('--use-hardware-encoding', action='store_true', help='Use hardware encoding for H.265')
-args = parser.parse_args()
-
-# 然后将 args.use_hardware_encoding 传递到相应的函数中
 
 @dataclass
 class DiscInfo:
@@ -50,7 +45,8 @@ class InputArgs:
     transcode_audio: bool
     audio_bitrate: int
     left_right_bitrate: int
-    mv_hevc_quality: int
+    #mv_hevc_quality: int
+    b: str
     fov: int
     frame_rate: str
     resolution: str
@@ -426,7 +422,6 @@ def generate_ffmpeg_wrapper_command(
     disc_info: DiscInfo,
     bitrate: int,
     crop_params: str,
-    use_hardware_encoding: bool = True  # 新增参数用于控制是否使用硬件编码
 ) -> list[Any]:
     pix_fmt = "yuv420p10le" if disc_info.color_depth == 10 else "yuv420p"
     stream = ffmpeg.input(
@@ -438,16 +433,10 @@ def generate_ffmpeg_wrapper_command(
     )
     if crop_params:
         stream = ffmpeg.filter(stream, "crop", *crop_params.split(":"))
-    
-    if use_hardware_encoding:
-        vcodec = "hevc_videotoolbox"
-    else:
-        vcodec = "libx265"
-    
     stream = ffmpeg.output(
         stream,
         f"file:{output_path}",
-        vcodec=vcodec,
+        vcodec="hevc_videotoolbox",
         video_bitrate=f"{bitrate}M",
         bufsize=f"{bitrate * 2}M",
         tag="hvc1",
@@ -514,6 +503,7 @@ def split_mvc_to_stereo(
     return left_output_path, right_output_path
 
 
+
 def combine_to_mv_hevc(
     left_video_path: Path,
     right_video_path: Path,
@@ -522,21 +512,20 @@ def combine_to_mv_hevc(
 ) -> None:
     output_path.unlink(missing_ok=True)
     command = [
-        SPATIAL_MEDIA,
-        "merge",
-        "-l",
-        left_video_path,
-        "-r",
-        right_video_path,
-        "-q",
-        input_args.mv_hevc_quality,
-        "--left-is-primary",
-        "--horizontal-field-of-view",
-        input_args.fov,
-        "-o",
-        output_path,
+        "/opt/homebrew/bin/spatial",
+        "make", 
+        "-i",
+        str(left_video_path),
+        "-i",
+        str(right_video_path),
+        "--faststart",
+        "-b",
+        input_args.b,
+        "--output",
+        str(output_path),
     ]
     run_command(command, "Combine stereo HEVC streams to MV-HEVC.")
+
 
 
 def transcode_audio(input_path: Path, transcoded_audio_path: Path, bitrate: int):
@@ -553,17 +542,19 @@ def transcode_audio(input_path: Path, transcoded_audio_path: Path, bitrate: int)
 def mux_video_audio_and_subtitles(
     mv_hevc_path: Path, audio_path: Path, subtitle_path: Path | None, muxed_path: Path
 ) -> None:
+    # 构建基础命令
     command = [
-        MP4BOX_PATH,
-        "-add",
-        mv_hevc_path,
-        "-add",
-        audio_path,
+        "/opt/homebrew/bin/spatial",
+        "combine",
+        "--video",
+        str(mv_hevc_path),
+        "--audio",
+        str(audio_path),
+        "--output",
+        str(muxed_path)  # 确保输出路径紧跟在 '--output' 后面
     ]
-    if subtitle_path and subtitle_path.suffix.lower() != ".sup":
-        command += ["-add", subtitle_path]
 
-    command.append(muxed_path)
+    # 执行命令
     run_command(command, "Remux audio and video to final output.")
 
 
@@ -657,10 +648,10 @@ def parse_arguments() -> InputArgs:
         help="Bitrate for MV-HEVC encoding in megabits.  Default of 20Mb/s.",
     )
     parser.add_argument(
-        "--mv-hevc-quality",
-        default=75,
-        type=int,
-        help="Quality factor for MV-HEVC encoding.",
+        "-b",
+	type=str,
+        default="10M",
+        help="Bitrate for output video (examples: 750K, 20M, 20000000)",
     )
     parser.add_argument(
         "--fov", default=90, type=int, help="Horizontal field of view for MV-HEVC."
@@ -710,7 +701,8 @@ def parse_arguments() -> InputArgs:
         transcode_audio=args.transcode_audio,
         audio_bitrate=args.audio_bitrate,
         left_right_bitrate=args.left_right_bitrate,
-        mv_hevc_quality=args.mv_hevc_quality,
+        #mv_hevc_quality=args.mv_hevc_quality,
+	b=args.b,
         fov=args.fov,
         frame_rate=args.frame_rate or "",
         resolution=args.resolution or "",
