@@ -533,7 +533,7 @@ def transcode_audio(input_path: Path, transcoded_audio_path: Path, bitrate: int)
     audio_transcoded = ffmpeg.output(
         audio_input,
         str(f"file:{transcoded_audio_path}"),
-        acodec="aac_at",
+        acodec="ac3",
         audio_bitrate=f"{bitrate}k",
     )
     run_ffmpeg_print_errors(audio_transcoded, overwrite_output=True)
@@ -626,7 +626,7 @@ def parse_arguments() -> InputArgs:
         help="Output folder path. Defaults to current directory.",
     )
     parser.add_argument(
-        "--transcode-audio", action="store_true", help="Transcode audio to AAC format."
+        "--transcode-audio", action="store_true",default="True", help="Transcode audio to AAC format."
     )
     parser.add_argument(
         "--audio-bitrate",
